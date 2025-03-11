@@ -55,7 +55,7 @@ Therefore, for more informations regarding the **Virtual Environment** used in A
 
 ### Additional Datasets
 
-If you're interested in trying this project yourself, you'll need access to the `complete datasets` we've created. Since GitHub has **file size limits**, we've made them all available [here](https://drive.google.com/drive/folders/13LYorB-vWtQVRRSUJi1nwCNquWJY-Ubi?usp=drive_link).
+> ADDITIONAL DATASETS [MAYBE]
 
 ## Project Results
 
