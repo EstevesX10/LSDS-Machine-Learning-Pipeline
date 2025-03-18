@@ -4,7 +4,7 @@ import os
 from pyspark.sql import SparkSession
 
 # Custom Imports
-from .CustomDecorators import (timeit)
+from .CustomDecorators import (timeit, resourceProfiler)
 
 class DatasetManager:
     def __init__(self, sparkSession: SparkSession, config:dict, pathsConfig:dict) -> None:
@@ -28,8 +28,9 @@ class DatasetManager:
         self.sparkSession: SparkSession = sparkSession
         self.config: dict = config
         self.pathsConfig: dict = pathsConfig
-
-    @timeit
+    
+    # @timeit
+    @resourceProfiler
     def printConfig(self):
         # Testing the decorator
         # print(self.config)
