@@ -2,6 +2,8 @@
 
 # LSDS | Machine Learning Pipeline
 
+## ICU Patient Length of Stay Prediction
+
 </div>
 
 <p align="center" width="100%">
@@ -13,10 +15,10 @@
         <img src="https://img.shields.io/badge/Made%20with-Python-9eb0f2?style=for-the-badge&logo=Python&logoColor=9eb0f2">
     </a>
     <a>
-        <img src="https://img.shields.io/badge/Made%20with-Tensorflow-9eb0f2?style=for-the-badge&logo=tensorflow&logoColor=9eb0f2">
+        <img src="https://img.shields.io/badge/Made%20with-Jupyter-9eb0f2?style=for-the-badge&logo=Jupyter&logoColor=9eb0f2">
     </a>
     <a>
-        <img src="https://img.shields.io/badge/Made%20with-Jupyter-9eb0f2?style=for-the-badge&logo=Jupyter&logoColor=9eb0f2">
+        <img src="https://img.shields.io/badge/Made%20with-Apache Spark-9eb0f2?style=for-the-badge&logo=apachespark&logoColor=9eb0f2">
     </a>
 </div>
 
@@ -53,9 +55,17 @@ Therefore, for more informations regarding the **Virtual Environment** used in A
 
 > ADD PLANNED WORK
 
-### Additional Datasets
+### Datasets
 
-> ADDITIONAL DATASETS [MAYBE]
+> MENTION THE MIMIC DATASET
+
+If you're interested in inspecting and executing this project yourself, you'll need access to all the `datasets` we've used.
+
+<p align="center" width="100%">
+    <img src="./Machine-Learning-Pipeline/Assets/Warning.png" width="15%" height="15%" />
+</p>
+
+Since GitHub has **file size limits**, we've made them all available in a Cloud Storage provided by Google Drive which you can access [here](https://drive.google.com/drive/folders/1Axovba77a1soFb7CQn8y2_HZYc0vH5Lw?usp=drive_link).
 
 ## Project Results
 
