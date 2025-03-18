@@ -13,7 +13,8 @@ def loadConfig() -> dict:
 
     return {
         # Constants
-        'seed':14
+        'seed':14,
+        'targetFeature':'LOS'
     }
 
 def createDatasetsPaths() -> dict:
@@ -31,6 +32,10 @@ def createDatasetsPaths() -> dict:
 
     return {
         'ADMISSIONS':'./Datasets/ADMISSIONS.csv',
+        'CHARTEVENTS':'./Datasets/CHARTEVENTS.csv',
+        'DIAGNOSIS_ICD':'./Datasets/DIAGNOSES_ICD.csv',
+        'ICUSTAYS':'./Datasets/ICUSTAYS.csv',
+        'PATIENTS':'./Datasets/PATIENTS.csv',
     }
 
 def loadPathsConfig() -> dict:
