@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import os
-from time import (time)
 from pyspark.sql import SparkSession
 
 # Custom Imports
@@ -26,9 +25,9 @@ class DatasetManager:
         """
 
         # Save the given parameters
-        self.sparkSession = sparkSession
-        self.config = config
-        self.pathsConfig = pathsConfig
+        self.sparkSession: SparkSession = sparkSession
+        self.config: dict = config
+        self.pathsConfig: dict = pathsConfig
 
     @timeit
     def printConfig(self):
