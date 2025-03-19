@@ -33,7 +33,7 @@ def createDatasetsPaths() -> dict:
     return {
         'ADMISSIONS':'./Datasets/ADMISSIONS.csv',
         'CHARTEVENTS':'./Datasets/CHARTEVENTS.csv',
-        'DIAGNOSIS_ICD':'./Datasets/DIAGNOSES_ICD.csv',
+        'DIAGNOSES_ICD':'./Datasets/DIAGNOSES_ICD.csv',
         'ICUSTAYS':'./Datasets/ICUSTAYS.csv',
         'PATIENTS':'./Datasets/PATIENTS.csv',
     }

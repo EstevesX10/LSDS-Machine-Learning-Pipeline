@@ -1,3 +1,4 @@
+from typing import (Tuple)
 import numpy as np
 import pandas as pd
 import os
@@ -37,6 +38,27 @@ class DatasetManager:
         # Create a Dictionary to store a copy of each dataframe
         self.dataframes: dict = {dataset:None for dataset in self.availableDatasets}
     
+        # Save a variable for the main dataframe to use
+        self.df = None
+
+    @staticmethod
+    def shape(dataframe:DataFrame) -> Tuple[int, int]:
+        """
+        # Description
+            -> This method calculates the number of rows and columns on a pySpark DataFrame.
+        ------------------------------------------------------------------------------------
+        # Params:
+        ---------
+            - dataframe: [pySpark] DataFrame -> DataFrame in which to compute the rows and columns of.
+        ----------
+        # Returns:
+        ----------
+            - A tuple with the amount of rows and columns in the DataFrame.
+        """
+
+        # Return the number of rows and columns on the dataframe
+        return (dataframe.count(), len(dataframe.columns))
+
     # @timeit
     @resourceProfiler
     def printConfig(self):
@@ -119,4 +141,40 @@ class DatasetManager:
         # Iterate through all the available datasets
         for dataset in self.availableDatasets:
             # Load the current dataframe
-            self.loadDataFrame(filename=dataset)
+            _ = self.loadDataFrame(filename=dataset)
+
+    def joinDataFrames(self) -> DataFrame:
+        """
+        # Description
+            -> this method focuses on joining all the dataframes
+            based on the columns they share with one another.
+        --------------------------------------------------------
+        # Params:
+        ---------
+            - None
+        ----------
+        # Returns:
+        ----------
+            - A spark dataframe with all the information from the important tables.
+        """
+
+        # Check if all the dataframes have been loaded
+        if any(value is None for (_, value) in self.dataframes.items()):
+            raise ValueError("Not all the dataframes have been loaded at this moment!")
+
+        # Get all the dataframes
+        admissions_df = self.dataframes['ADMISSIONS']
+        diagnosis_df = self.dataframes['DIAGNOSES_ICD']
+        icuStays_df = self.dataframes['ICUSTAYS']
+        patients_df = self.dataframes['PATIENTS']
+
+        # Merge the spark dataframes
+        df_joined = admissions_df.join(diagnosis_df, on=["SUBJECT_ID", "HADM_ID"], how="outer")
+        df_joined = df_joined.join(icuStays_df, on=["SUBJECT_ID", "HADM_ID"], how="outer")
+        df_joined = df_joined.join(patients_df, on=["SUBJECT_ID"], how="outer")
+        
+        # Keep the final dataframe
+        self.df = df_joined
+
+        # Return the dataframe
+        return df_joined
