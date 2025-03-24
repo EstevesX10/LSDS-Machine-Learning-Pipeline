@@ -119,11 +119,15 @@ class DatasetAnalyser:
                 y_vals.append(row["count"])
 
             # Create a figure
+            
             if len(x_vals) > 10:
-                plt.figure(figsize=(38, 20))
-                plt.xticks(rotation=45, ha='right', fontsize=8)
+                plt.figure(figsize=(20, 12))
+                plt.xticks(rotation=45, ha='right', fontsize=10)
+            elif len(x_vals) > 5 :
+                plt.figure(figsize=(8, 5))
+                plt.xticks(rotation=45, ha='right', fontsize=10)
             else:
-                plt.figure(figsize=(12, 8))
+                plt.figure(figsize=(8, 5))
                 plt.xticks(rotation=0, ha='center', fontsize=10)
             
             # Prepare color mapping
@@ -210,7 +214,7 @@ class DatasetAnalyser:
             raise ValueError("None of the given features exist in the Spark DataFrame!")
 
         # Layout for subplots
-        cols = 4
+        cols = 3
         numberFeatures = len(validFeatures)
         rows = (numberFeatures + cols - 1) // cols
 
