@@ -1,8 +1,8 @@
-from typing import (Tuple)
+from typing import (Tuple, List)
+import dask.dataframe
 import numpy as np
 import pandas as pd
-import dask.dataframe as dd
-from dask import dataframe
+import dask
 import os
 from .MyDataFrame import (MyDataFrame)
 
@@ -12,7 +12,7 @@ class DaskDataframe(MyDataFrame):
         super().__init__(config, pathsConfig)
     
     @staticmethod
-    def shape(dataframe:dataframe) -> Tuple[int, int]:
+    def shape(dataframe:dask.dataframe) -> Tuple[int, int]:
         """
         # Description
             -> This method calculates the number of rows and columns on a DataFrame.
@@ -28,7 +28,7 @@ class DaskDataframe(MyDataFrame):
         # Return the shape of the dask dataframe
         return (dataframe.shape[0].compute(), dataframe.shape[1])
 
-    def load(self, filename: str) -> dd.DataFrame:
+    def load(self, filename: str) -> dask.dataframe:
         """
         Description:
             -> This method loads a CSV file using Dask.
@@ -49,7 +49,7 @@ class DaskDataframe(MyDataFrame):
             return self.dataframes[filename]
         
         # Load the CSV using Dask
-        df = dd.read_csv(self.pathsConfig['Datasets'][filename], sep=',', header=0, assume_missing=True)
+        df = dask.dataframe.read_csv(self.pathsConfig['Datasets'][filename], sep=',', header=0, assume_missing=True, dtype={'ICD9_CODE': 'object'})
         
         # Remove the "ROW_ID" column if it exists
         if "ROW_ID" in df.columns:
@@ -75,7 +75,7 @@ class DaskDataframe(MyDataFrame):
         for dataset in self.availableDatasets:
             _ = self.load(filename=dataset)
 
-    def join(self) -> dd.DataFrame:
+    def join(self) -> dask.dataframe:
         """
         Description:
             -> This method joins all loaded DataFrames based on common columns using Dask.
@@ -102,13 +102,80 @@ class DaskDataframe(MyDataFrame):
         df_joined = df_joined.merge(icuStays_df, on=["SUBJECT_ID", "HADM_ID"], how="outer")
         df_joined = df_joined.merge(patients_df, on=["SUBJECT_ID"], how="outer")
         
+        # Update the main dataframe inside this class
         self.df = df_joined
+
+        # Return the joined dataframe
         return df_joined
     
+    def getUselessColumns(self) -> List[str]:
+        """
+        # Description
+            -> This method aims to fetch all the ID, time, date and
+            flag related columns from the DataFrame to later remove them.
+        -----------------------------------------------------------------
+        # Params:
+            - None
+        
+        # Returns:
+            - A list with the names of the columns to remove.
+        """
+
+        # Check if the joined dataframe has already been computed
+        if self.df is None:
+            raise ValueError("The Joined DataFrame has yet to be computed!")
+
+        # Define a list with the Keywords that exist on the columns' names
+        keywords = ['ID', 'TIME', 'DOB', 'DOD', 'FLAG']
+
+        # Fetch the columns that contain at least one of the keywords in their name
+        columns = [col for col in self.df.columns if any(keyword in col for keyword in keywords)]
+
+        # Return the fetched columns
+        return columns
+
+    def dropColumns(self, columns:list) -> None:
+        """
+        # Description
+            -> This method focuses on droping a given set of columns in the dataframe.
+        ------------------------------------------------------------------------------
+        # Params:
+            - columns: list -> List with the columns to drop
+        
+        # Returns:
+            - None, since we are simply dropping rows on the dataframe.
+        """
+
+        # Check if the joined dataframe has already been computed
+        if self.df is None:
+            raise ValueError("The Joined DataFrame has yet to be computed!")
+
+        # Drop the given columns
+        self.df = self.df.drop(columns=columns)
+
+    def dropNanRows(self, columns:list=None) -> None:
+        """
+        # Description
+            -> This method aims to remove all the NaN enty rows in the main processed dataframe.
+        ----------------------------------------------------------------------------------------
+        # Params:
+            - columns: list -> Possible subset of columns in which to consider the NaN values.
+        
+        # Returns:
+            - None, since we are simply dropping rows with NaN values on the dataframe.
+        """
+
+        # Check if the joined dataframe has already been computed
+        if self.df is None:
+            raise ValueError("The Joined DataFrame has yet to be computed!")
+
+        # Drop the NaN entries on the dataframe
+        self.df = self.df.dropna(subset=columns, how='any')
+
     # ------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def getColumnMissingValues(df: dd.DataFrame, column: str) -> dd.DataFrame:
+    def getColumnMissingValues(df: dask.dataframe, column: str) -> dask.dataframe:
         """
         Description:
             -> This method returns the count of missing values for a given column in a Dask DataFrame.
@@ -125,10 +192,10 @@ class DaskDataframe(MyDataFrame):
 
         # Create a small pandas DataFrame with the result and then convert it to a Dask DataFrame
         pdf = pd.DataFrame({f"[{column}] Missing Values": [missing_count]})
-        return dd.from_pandas(pdf, npartitions=1)
+        return dask.dataframe.from_pandas(pdf, npartitions=1)
 
     @staticmethod
-    def checkMissingValues(df: dd.DataFrame) -> None:
+    def checkMissingValues(df: dask.dataframe) -> None:
         """
         Description:
             -> This method computes the count of missing values for each column in a Dask DataFrame
@@ -155,7 +222,7 @@ class DaskDataframe(MyDataFrame):
         print(pdf)
 
     @staticmethod
-    def getColumnUniqueValues(df: dd.DataFrame, column: str) -> dd.DataFrame:
+    def getColumnUniqueValues(df: dask.dataframe, column: str) -> dask.dataframe:
         """
         Description:
             -> This method returns the unique values and their counts for a specified column in a Dask DataFrame.
@@ -169,14 +236,16 @@ class DaskDataframe(MyDataFrame):
         """
         # Use value_counts to obtain unique values and their counts
         unique_series = df[column].value_counts()
+
         # Convert the series into a DataFrame and reset the index
         uniqueValues = unique_series.rename("Total Count").to_frame().reset_index().rename(columns={"index": column})
+
         # Optionally, sort the DataFrame by the column values
         uniqueValues = uniqueValues.map_partitions(lambda pdf: pdf.sort_values(by=column))
         return uniqueValues
 
     @staticmethod
-    def checkColumnsAmountUniqueValues(df: dd.DataFrame) -> None:
+    def checkColumnsAmountUniqueValues(df: dask.dataframe) -> None:
         """
         Description:
             -> This method computes the number of unique values for each column in a Dask DataFrame.
