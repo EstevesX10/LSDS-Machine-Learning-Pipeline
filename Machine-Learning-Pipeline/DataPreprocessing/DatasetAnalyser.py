@@ -177,21 +177,29 @@ class DatasetAnalyser:
 
         # For categorical features, use a bar plot
         elif pd.api.types.is_categorical_dtype(self.df[feature]) or self.df[feature].dtype == object:
-                # Create a figure
-                plt.figure(figsize=(8, 5))
-
                 # Get unique values and their counts
                 valueCounts = self.df[feature].value_counts().sort_index()
                 
+                if len(valueCounts) > 20:
+                    # Create a figure
+                    plt.figure(figsize=(15, 9))
+                    plt.tick_params(axis="x", rotation=90)
+                elif len(valueCounts) > 5:
+                    # Create a figure
+                    plt.figure(figsize=(8, 5))
+                    plt.tick_params(axis="x", rotation=90)
+                else:
+                    # Create a figure
+                    plt.figure(figsize=(8, 5))
+                    plt.tick_params(axis="x", rotation=0)
+                plt.grid(True, axis="y", linestyle="--", alpha=0.7)
+
                 # Create a color map
                 cmap = plt.get_cmap('RdYlGn')
                 colors = [self.pastelizeColor(cmap(i / (len(valueCounts) - 1))) for i in range(len(valueCounts))]
 
                 # Plot the bars with gradient colors
                 bars = plt.bar(valueCounts.index.astype(str), valueCounts.values, color=colors, edgecolor='lightgrey', alpha=1.0, width=0.8, zorder=2)
-                
-                # Plot the grid behind the bars
-                plt.grid(True, zorder=1)
 
                 # Add text (value counts) to each bar at the center with a background color
                 for i, bar in enumerate(bars):
@@ -213,7 +221,7 @@ class DatasetAnalyser:
                 plt.ylabel('Number of Samples')
                 
                 # Tilt x-axis labels by 0 degrees and adjust the fontsize
-                plt.xticks(rotation=0, ha='center', fontsize=8)
+                # plt.xticks(rotation=0, ha='center', fontsize=8)
 
                 # Display the plot
                 plt.show()
@@ -247,7 +255,7 @@ class DatasetAnalyser:
         numberFeatures = len(validFeatures)
 
         # Define the layout for the grid-like plot
-        cols = 4
+        cols = 2
         rows = (numberFeatures + cols - 1) // cols
 
         # Define a figure
@@ -278,8 +286,12 @@ class DatasetAnalyser:
                 ax.set_xlabel(feature)
                 ax.set_ylabel("Count")
 
-                if numberValues > 5:
-                    ax.tick_params(axis="x", rotation=45)
+                if numberValues > 20:
+                    ax.tick_params(axis="x", rotation=90)
+                elif numberValues > 8:
+                    ax.tick_params(axis="x", rotation=90)
+                elif numberValues > 5:
+                    ax.tick_params(axis="x", rotation=65)
                 else:
                     ax.tick_params(axis="x", rotation=0)
                 ax.grid(True, axis="y", linestyle="--", alpha=0.7)
