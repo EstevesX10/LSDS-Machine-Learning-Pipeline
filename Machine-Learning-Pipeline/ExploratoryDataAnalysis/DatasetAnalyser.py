@@ -326,7 +326,7 @@ class DatasetAnalyser:
         plt.tight_layout()
         plt.show()
 
-    def plotXyCharts(self, x:str, y:list[str], chartType:str='scatter') -> None:
+    def plotXyCharts(self, x:str, y:list[str], title:str, chartType:str='scatter') -> None:
         """
         # Description
             -> Plot multiple Y variables against a single X variable in a grid layout 
@@ -340,6 +340,7 @@ class DatasetAnalyser:
         # Parameters:
             - x: str -> The feature to use for the X axis.
             - y: list[str] -> A list of features to plot on the Y axis.
+            - title: str -> Title for the plot.
             - chartType: str, optional -> The type of plot to create ('scatter' or 'line') when both x and y are numeric. Default is 'scatter'.
         
         # Returns:
@@ -373,7 +374,7 @@ class DatasetAnalyser:
                 return f"{int(val)}"
             else:
                 return f"{val:.2f}"
-        
+
         # Loop over each y variable.
         for i, y_ in enumerate(y):
             ax = axes[i]
@@ -386,8 +387,6 @@ class DatasetAnalyser:
                 else:  # default to scatter plot.
                     ax.scatter(self.df[x], self.df[y_], alpha=0.7, color=pastelColor, zorder=2)
             else:
-
-                print(y_)
                 # For non-numeric cases (or categorical grouping), create a bar plot.
                 # Group by x and compute mean of y.
                 grouped = self.df.groupby(x)[y_].mean().reset_index()
@@ -434,6 +433,7 @@ class DatasetAnalyser:
         for j in range(yTotalFeatures, len(axes)):
             fig.delaxes(axes[j])
         
+        plt.suptitle(title)
         plt.tight_layout()
         plt.show()
 
@@ -485,7 +485,7 @@ class DatasetAnalyser:
             if abs(val - round(val)) < 1e-8:
                 return str(int(round(val)))
             else:
-                return f"{val:.2f}"
+                return f"{val:.3f}"
         
         # 5. Create a custom autopct function that puts the bold label and numeric sum in each wedge.
         def makeAutopct(labelsList, sumsList):
@@ -535,7 +535,6 @@ class DatasetAnalyser:
             f"Distribution of {numericColumn} by {labelColumn}",
             fontsize=12,
             fontweight='bold',
-            pad=30
         )
         
         plt.tight_layout()
