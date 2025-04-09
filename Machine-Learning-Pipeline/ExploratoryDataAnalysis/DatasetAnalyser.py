@@ -8,7 +8,7 @@ class DatasetAnalyser:
     def __init__(self, df:pd.DataFrame) -> None:
         """
         # Description
-            -> Constructor of the DatasetAnalyser Class which is responsible for
+            -> Constructor of the DataAnalyser Class which is responsible for
             analysing a given dataframe within a exploratory data analysis setting.
         ---------------------------------------------------------------------------
         # Params:
@@ -323,5 +323,220 @@ class DatasetAnalyser:
         for j in range(numberFeatures, len(axes)):
             fig.delaxes(axes[j])
 
+        plt.tight_layout()
+        plt.show()
+
+    def plotXyCharts(self, x:str, y:list[str], chartType:str='scatter') -> None:
+        """
+        # Description
+            -> Plot multiple Y variables against a single X variable in a grid layout 
+        with a maximum of 3 columns (or fewer if less than 3 Y variables are provided).
+            In the bar chart (non-numeric) case, the colors for the bars are generated to 
+        follow a fade effect using the 'RdYlGn' colormap, then pastelized. 
+            Each bar gets a text label displaying its value, which is formatted so that if
+        the number is integer-like it is shown as an integer and if it is decimal, 
+        at most 2 decimal places are shown.
+        ----------------------------------------------------------------------------------
+        # Parameters:
+            - x: str -> The feature to use for the X axis.
+            - y: list[str] -> A list of features to plot on the Y axis.
+            - chartType: str, optional -> The type of plot to create ('scatter' or 'line') when both x and y are numeric. Default is 'scatter'.
+        
+        # Returns:
+            - None. Displays the plots.
+        """
+        # Validate that the x-axis column exists.
+        if x not in self.df.columns:
+            raise ValueError(f"X axis feature '{x}' is not present in the DataFrame.")
+        
+        # Validate that each y-axis column exists.
+        for y_ in y:
+            if y_ not in self.df.columns:
+                raise ValueError(f"Y axis feature '{y_}' is not present in the DataFrame.")
+        
+        # Determine layout: max columns is 3 (or less if fewer y variables).
+        yTotalFeatures = len(y)
+        ncols = min(3, yTotalFeatures)
+        nrows = (yTotalFeatures + ncols - 1) // ncols  # Ceiling division for rows
+        
+        # Create figure and axes.
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 4))
+        if yTotalFeatures == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten()
+        
+        # Helper function to format numbers.
+        def format_number(val):
+            # If the value is integer-like, display as int; otherwise show 2 decimals.
+            if abs(val - round(val)) < 1e-8:
+                return f"{int(val)}"
+            else:
+                return f"{val:.2f}"
+        
+        # Loop over each y variable.
+        for i, y_ in enumerate(y):
+            ax = axes[i]
+            
+            # If both x and y are numeric, use scatter or line plot with a uniform pastel color.
+            if pd.api.types.is_numeric_dtype(self.df[x]) and pd.api.types.is_numeric_dtype(self.df[y_]):
+                pastelColor = self.pastelizeColor('skyblue', weight=0.5)
+                if chartType == 'line':
+                    ax.plot(self.df[x], self.df[y_], color=pastelColor, marker='o', linestyle='-', zorder=2)
+                else:  # default to scatter plot.
+                    ax.scatter(self.df[x], self.df[y_], alpha=0.7, color=pastelColor, zorder=2)
+            else:
+
+                print(y_)
+                # For non-numeric cases (or categorical grouping), create a bar plot.
+                # Group by x and compute mean of y.
+                grouped = self.df.groupby(x)[y_].mean().reset_index()
+                # Number of distinct x categories
+                n = len(grouped)
+                cmap = plt.get_cmap("RdYlGn")
+                # For a single bar, choose the middle of the colormap; else, generate a list of colors.
+                if n > 1:
+                    colors = [self.pastelizeColor(cmap(i / (n - 1))) for i in range(n)]
+                else:
+                    colors = [self.pastelizeColor(cmap(0.5))]
+                
+                bars = ax.bar(
+                    grouped[x].astype(str), grouped[y_],
+                    color=colors, edgecolor='grey', alpha=1.0, zorder=2
+                )
+                # Add text labels to each bar.
+                for j, bar in enumerate(bars):
+                    yval = bar.get_height()
+                    # Use a slightly lighter version of the bar's color for the text background.
+                    lighterColor = self.pastelizeColor(colors[j], weight=0.2)
+                    labelText = format_number(yval)
+                    ax.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        yval / 2,
+                        labelText,
+                        ha='center',
+                        va='center',
+                        fontsize=10,
+                        color='black',
+                        bbox=dict(facecolor=lighterColor, edgecolor='none', boxstyle='round,pad=0.3'),
+                        zorder=3
+                    )
+                # Adjust the x-axis tick labels.
+                ax.set_xticklabels(grouped[x].astype(str), rotation=45, ha='right', fontsize=9)
+            
+            ax.set_xlabel(x)
+            ax.set_ylabel(y_)
+            ax.set_title(f'{y_} vs {x}')
+            # Draw grid lines behind other elements.
+            ax.grid(True, linestyle='--', alpha=0.7, zorder=1)
+        
+        # Remove any unused subplots.
+        for j in range(yTotalFeatures, len(axes)):
+            fig.delaxes(axes[j])
+        
+        plt.tight_layout()
+        plt.show()
+
+    def plotPieChart(self, numericColumn:str, labelColumn:str, weight:float=0.5) -> None:
+        """
+        # Description
+            -> Plots a pie chart where each wedge corresponds to the sum of a numeric column
+        grouped by a specified label column. Each wedge is labeled with the (bold) 
+        category label and the real numeric sum (no percentages).
+            A pastel style is applied using the 'RdYlGn' colormap. Each label is displayed
+        inside a rectangle with a lighter pastel background for readability.
+        -------------------------------------------------------------------------------------
+        # Parameters:
+            - numericColumn : str -> The name of the numeric column in the DataFrame to sum.
+            - labelColumn : str -> The column by which to group. Each distinct value in this column corresponds to one wedge in the pie chart.
+            - weight : float, optional -> The weight used when converting the wedge color to a pastel color (0 = full color, 1 = full white). Defaults to 0.5.
+        
+        # Returns:
+            - None
+        """
+        # 1. Validate columns.
+        if numericColumn not in self.df.columns:
+            raise ValueError(f"Numeric column '{numericColumn}' not found in the DataFrame.")
+        if labelColumn not in self.df.columns:
+            raise ValueError(f"Label column '{labelColumn}' not found in the DataFrame.")
+        
+        # 2. Group by labelColumn, summing the numericColumn.
+        groupedSums = self.df.groupby(labelColumn)[numericColumn].sum()
+        if groupedSums.empty:
+            raise ValueError("No data available after grouping. Check your DataFrame or columns.")
+
+        # 3. Prepare labels (the group names) and values (the sums).
+        labels = groupedSums.index.astype(str).tolist()
+        values = groupedSums.values
+        
+        n = len(values)
+        
+        # 4. Generate colors from the 'RdYlGn' colormap and pastelize them.
+        cmap = plt.get_cmap("RdYlGn")
+        if n > 1:
+            colors = [self.pastelizeColor(cmap(i / (n - 1)), weight=weight) for i in range(n)]
+        else:
+            # Only one wedge; pick the midpoint of colormap.
+            colors = [self.pastelizeColor(cmap(0.5), weight=weight)]
+        
+        # Helper function for formatting numeric values.
+        def format_number(val):
+            # Display integers without decimals; otherwise, 2 decimals.
+            if abs(val - round(val)) < 1e-8:
+                return str(int(round(val)))
+            else:
+                return f"{val:.2f}"
+        
+        # 5. Create a custom autopct function that puts the bold label and numeric sum in each wedge.
+        def makeAutopct(labelsList, sumsList):
+            def myAutopct(_pct):
+                idx = myAutopct.index
+                myAutopct.index += 1
+                
+                # Bold label (using MathText for a simple approach).
+                bold_label = rf'$\bf{{{labelsList[idx]}}}$'
+                
+                # Real numeric sum (no percentages).
+                val_str = format_number(sumsList[idx])
+                
+                # Display label on one line, numeric value on the next.
+                return f"{bold_label}\n{val_str}"
+            myAutopct.index = 0
+            return myAutopct
+        
+        # 6. Plot the pie chart, adjusting pctdistance so text sits closer to the center.
+        fig, ax = plt.subplots(figsize=(6, 6))
+        wedges, _, autotexts = ax.pie(
+            values,
+            labels=None,  # We'll place both label & sum inside the wedge using autopct.
+            colors=colors,
+            autopct=makeAutopct(labels, values),
+            startangle=90,
+            # pctdistance controls where inside the wedge the text is placed (lower means closer to center).
+            pctdistance=0.6,
+            textprops=dict(color="black", fontsize=9, ha='center', va='center'),
+            wedgeprops=dict(edgecolor="white", linewidth=1.5)
+        )
+        
+        # 7. Add a pastel background behind each label, with reduced padding.
+        for wedge, autotext in zip(wedges, autotexts):
+            wedgeColor = wedge.get_facecolor()  # RGBA tuple.
+            labelBackgroundColor = self.pastelizeColor(wedgeColor, weight=0.2)
+            autotext.set_bbox(dict(
+                facecolor=labelBackgroundColor,
+                edgecolor='none',
+                boxstyle='round,pad=0.2',
+                alpha=0.8,
+                clip_on=False  # Allows text box to slightly extend beyond wedge if needed.
+            ))
+        
+        ax.axis('equal')  # Draw pie as a circle.
+        ax.set_title(
+            f"Distribution of {numericColumn} by {labelColumn}",
+            fontsize=12,
+            fontweight='bold',
+            pad=30
+        )
+        
         plt.tight_layout()
         plt.show()
