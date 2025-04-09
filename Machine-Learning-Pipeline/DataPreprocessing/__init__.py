@@ -4,4 +4,3 @@ __all__ = ["timeit",
 
 from .CustomDecorators import (timeit)
 from .DatasetManager import (DatasetManager)
-from .DatasetAnalyser import (DatasetAnalyser)
