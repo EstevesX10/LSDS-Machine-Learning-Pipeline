@@ -1,6 +1,6 @@
 # Defining which submodules to import when using from <package> import *
 __all__ = ["timeit",
-           "DatasetManager", "DatasetAnalyser"]
+           "BigQueryLoader"]
 
 from .CustomDecorators import (timeit)
-from .DatasetManager import (DatasetManager)
+from .BiqQueryLoader import (BigQueryLoader)
