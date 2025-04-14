@@ -21,6 +21,35 @@ class BigQueryLoader:
         self._vital_patterns = value
         self._matched_items = None
 
+    def get_demo_df(self) -> bpd.DataFrame:
+        # Load key tables
+        icustays = bpd.read_gbq(f"{self.dataset}.ICUSTAYS")
+        admissions = bpd.read_gbq(f"{self.dataset}.ADMISSIONS")
+        patients = bpd.read_gbq(f"{self.dataset}.PATIENTS")
+
+        # Join to get demographics
+        icu_demo = (
+            icustays.merge(admissions, on=["HADM_ID", "SUBJECT_ID"])
+            .merge(patients, on="SUBJECT_ID")
+            .assign(
+                AGE=lambda df: df.INTIME.dt.year - df.DOB.dt.year,
+                LOS_HOURS=lambda df: df.LOS * 24,
+            )
+            .query("AGE < 120")[  # remove outliers
+                [
+                    "ICUSTAY_ID",
+                    "HADM_ID",
+                    "SUBJECT_ID",
+                    "GENDER",
+                    "ETHNICITY",
+                    "AGE",
+                    "LOS",
+                    "LOS_HOURS",
+                ]
+            ]
+        )
+        return icu_demo
+
     @property
     def matched_items(self) -> pd.DataFrame:
         """
@@ -131,6 +160,41 @@ class BigQueryLoader:
             {pivot_sql}
         FROM ce_24hr
         GROUP BY ICUSTAY_ID
+        """
+
+        return bpd.read_gbq(query)
+
+    def extract_vent_flag(self) -> bpd.DataFrame:
+        """
+        Returns a BigFrames DataFrame with one row per ICU stay and a binary on_vent flag
+        indicating presence of a ventilation-related event in the first 24 hours.
+        """
+        query = f"""
+        WITH vent_items AS (
+            SELECT ITEMID
+            FROM `{self.dataset}.D_ITEMS`
+            WHERE LOWER(LABEL) LIKE '%ventilator%'
+        ),
+        ce_24hr AS (
+            SELECT 
+                ce.ICUSTAY_ID,
+                TIMESTAMP_DIFF(ce.CHARTTIME, ic.INTIME, SECOND)/3600.0 AS HOURS_FROM_INTIME
+            FROM `{self.dataset}.CHARTEVENTS` ce
+            JOIN `{self.dataset}.ICUSTAYS` ic USING(ICUSTAY_ID)
+            JOIN vent_items vi ON ce.ITEMID = vi.ITEMID
+            WHERE ce.VALUENUM IS NOT NULL
+        ),
+        flagged AS (
+            SELECT ICUSTAY_ID, 1 AS on_vent
+            FROM ce_24hr
+            WHERE HOURS_FROM_INTIME <= 24
+            GROUP BY ICUSTAY_ID
+        )
+        SELECT 
+            ic.ICUSTAY_ID,
+            IFNULL(f.on_vent, 0) AS on_vent
+        FROM `{self.dataset}.ICUSTAYS` ic
+        LEFT JOIN flagged f USING(ICUSTAY_ID)
         """
 
         return bpd.read_gbq(query)
