@@ -1,41 +1,108 @@
-from functools import cached_property
+from functools import (cached_property)
 import bigframes.pandas as bpd
 import pandas as pd
 
-
 class BigQueryLoader:
-    def __init__(
-        self, vital_patterns: dict[str, list[str] | str], dataset: str = "MIMIC"
-    ):
+    """
+    # Description
+        -> A class for loading and processing data
+        from the MIMIC dataset using BigFrames.
+    """
+    def __init__(self, vital_patterns: dict[str, list[str] | str], dataset: str = "MIMIC"):
+        """
+        # Description:
+            -> Constructor of the MIMICDataLoader class, which initializes patterns used
+               to match items in the MIMIC D_ITEMS table, and sets a default dataset name.
+        ----------------------------------------------------------------------------------
+        # Params:
+            - vital_patterns: dict[str, list[str] | str]
+                -> Dictionary mapping a user-friendly vital name (e.g. 'heart_rate') to one or
+                more SQL LIKE patterns (e.g. ['%heart rate%', '%hr%']).
+            - dataset: str
+                -> The name of the BigQuery dataset containing MIMIC tables. Defaults to 'MIMIC'.
+        ------------
+        # Returns:
+            - None
+        """
+        # Store the user-provided dictionary of patterns (SQL LIKE expressions)
         self._vital_patterns = vital_patterns
-        self.dataset = dataset
 
-        self._matched_items = None
+        # Store the dataset name, e.g. "MIMIC" (default)
+        self.dataset = dataset
+        
+        # Internal cache for matched items DataFrame - Starts as None until first load
+        self._matched_vitals_df = None
 
     @property
-    def vital_patterns(self):
+    def vital_patterns(self) -> dict[str, list[str] | str]:
+        """
+        # Description:
+            -> Property to access the current dictionary of patterns for matching item IDs.
+        ----------------------------------------------------------------------------------
+        # Params:
+            - None.
+        ------------
+        # Returns:
+            - dict[str, list[str] | str]: The dictionary mapping vital names to LIKE patterns.
+        """
         return self._vital_patterns
 
     @vital_patterns.setter
-    def vital_patterns(self, value):
-        self._vital_patterns = value
-        self._matched_items = None
+    def vital_patterns(self, new_patterns: dict[str, list[str] | str]) -> None:
+        """
+        # Description:
+            -> Setter for the vital_patterns property, used to update the dictionary of
+               user-friendly vital labels and patterns, and reset the cached matched items.
+        ----------------------------------------------------------------------------------
+        # Params:
+            - new_patterns: dict[str, list[str] | str]
+                -> The updated dictionary of vital names to SQL LIKE patterns.
+        ------------
+        # Returns:
+            - None.
+        """
+        # Update the dictionary of patterns and invalidate any previously cached items
+        self._vital_patterns = new_patterns
+        self._matched_vitals_df = None
 
-    def get_demo_df(self) -> bpd.DataFrame:
-        # Load key tables
-        icustays = bpd.read_gbq(f"{self.dataset}.ICUSTAYS")
+    def load_demo(self) -> bpd.DataFrame:
+        """
+        # Description:
+            -> Loads key tables (ICUSTAYS, ADMISSIONS, PATIENTS) from BigQuery,
+               merges them, computes AGE and LOS_HOURS, and filters out unrealistic ages.
+        ----------------------------------------------------------------------------------
+        # Params:
+            - None.
+        ------------
+        # Returns:
+            - bpd.DataFrame: A BigFrames DataFrame with demographic info including
+              ICUSTAY_ID, HADM_ID, SUBJECT_ID, GENDER, ETHNICITY, AGE, LOS, LOS_HOURS.
+        """
+        # Read ICUSTAYS from BigQuery via BigFrames
+        icu_stays = bpd.read_gbq(f"{self.dataset}.ICUSTAYS")
+
+        # Read ADMISSIONS from BigQuery
         admissions = bpd.read_gbq(f"{self.dataset}.ADMISSIONS")
+
+        # Read PATIENTS from BigQuery
         patients = bpd.read_gbq(f"{self.dataset}.PATIENTS")
 
-        # Join to get demographics
-        icu_demo = (
-            icustays.merge(admissions, on=["HADM_ID", "SUBJECT_ID"])
+        # Merge all three tables to get a combined DataFrame with relevant columns
+        demographics_df = (
+            icu_stays
+            .merge(admissions, on=["HADM_ID", "SUBJECT_ID"])
             .merge(patients, on="SUBJECT_ID")
+            # Assign new columns:
             .assign(
+                # Approximate age = year of INTIME minus year of DOB
                 AGE=lambda df: df.INTIME.dt.year - df.DOB.dt.year,
+                # Convert LOS from days to hours
                 LOS_HOURS=lambda df: df.LOS * 24,
             )
-            .query("AGE < 120")[  # remove outliers
+            # Filter out rows where AGE is 120 or more (likely data artifact)
+            .query("AGE < 120")
+            # Retain only columns of interest
+            [
                 [
                     "ICUSTAY_ID",
                     "HADM_ID",
@@ -48,153 +115,207 @@ class BigQueryLoader:
                 ]
             ]
         )
-        return icu_demo
+
+        return demographics_df
 
     @property
-    def matched_items(self) -> pd.DataFrame:
+    def matched_vitals_df(self) -> pd.DataFrame:
         """
-        Matches ITEMIDs from D_ITEMS using a dict of {friendly_name: list of SQL LIKE patterns}.
-
-        Returns:
-        - DataFrame with: ITEMID, LABEL, VITAL_NAME (your friendly label)
+        # Description:
+            -> Creates a DataFrame of item IDs and labels in D_ITEMS that match the
+               user-defined patterns (SQL LIKE clauses). Then assigns a user-friendly
+               'VITAL_NAME' to each item.
+        ----------------------------------------------------------------------------------
+        # Params:
+            - None.
+        ------------
+        # Returns:
+            - pd.DataFrame with columns: ITEMID, LABEL, VITAL_NAME.
+              Cached after the first load for performance.
         """
+        # If we have already matched items, return the cached DataFrame
+        if self._matched_vitals_df is not None:
+            return self._matched_vitals_df
 
-        if self._matched_items is not None:
-            return self._matched_items
-
-        # Normalize to dict[str, list[str]]
+        # Convert any single strings in the patterns to lists for consistency
         normalized_patterns = {
-            name: [p] if isinstance(p, str) else p
-            for name, p in self.vital_patterns.items()
+            vital_name: [p] if isinstance(p, str) else p
+            for vital_name, p in self.vital_patterns.items()
         }
 
-        # Flatten to (pattern, label) pairs
-        all_patterns = []
+        # Flatten out a list of (vital_name, pattern) tuples
+        flat_patterns = []
         for vital_name, patterns in normalized_patterns.items():
             for pattern in patterns:
-                all_patterns.append((vital_name, pattern))
+                flat_patterns.append((vital_name, pattern))
 
-        # Build WHERE clause
-        conditions = " OR ".join(
-            [f"LOWER(LABEL) LIKE LOWER('{pattern}')" for _, pattern in all_patterns]
+        # Build a WHERE clause with OR for each pattern:
+        # e.g. LOWER(LABEL) LIKE LOWER('%heart rate%') OR LOWER(LABEL) LIKE LOWER('%hr%') ...
+        where_clauses = " OR ".join(
+            [f"LOWER(LABEL) LIKE LOWER('{pattern}')" for _, pattern in flat_patterns]
         )
 
         query = f"""
             SELECT ITEMID, LABEL
             FROM `{self.dataset}.D_ITEMS`
-            WHERE {conditions}
+            WHERE {where_clauses}
         """
-        matched = bpd.read_gbq(query).to_pandas()
+        # Read from BigQuery into a Pandas DataFrame
+        matched_items = bpd.read_gbq(query).to_pandas()
 
-        if matched.empty:
+        # If no rows matched, raise an error
+        if matched_items.empty:
             raise ValueError("No ITEMIDs matched any of the provided patterns.")
 
-        # Assign VITAL_NAME by checking which friendly name's pattern matched
+        # A helper function to assign a user-friendly name based on the pattern match
         def assign_vital_name(label: str) -> str:
             label_lower = label.lower()
+            # Check each (friendly_name, list_of_patterns) pair
             for vital_name, patterns in normalized_patterns.items():
+                # If the pattern (minus wildcards) is in the label, we consider it a match
                 for pattern in patterns:
                     if pattern.strip("%").lower() in label_lower:
                         return vital_name
             return "unknown"
 
-        matched["VITAL_NAME"] = matched["LABEL"].apply(assign_vital_name)
+        # Apply the assignment to each row, resulting in a new column 'VITAL_NAME'
+        matched_items["VITAL_NAME"] = matched_items["LABEL"].apply(assign_vital_name)
 
-        self._matched_items = matched
-        return matched
+        # Cache the result to avoid repeating the query if asked again
+        self._matched_vitals_df = matched_items
+        return matched_items
 
-    def summarize_vitals(self) -> bpd.DataFrame:
+    def pivot_vitals_24h(self) -> bpd.DataFrame:
         """
-        Aggregates and pivots multiple vitals into a wide-format BigFrames DataFrame.
-
-        Returns:
-        - A BigFrames DataFrame with one row per ICUSTAY_ID and one column per vital_stat
+        # Description:
+            -> Aggregates vital measurements from CHARTEVENTS in the first 24 hours of
+               an ICU stay. Each vital is pivoted with stats like mean, min, max, std, count.
+        ----------------------------------------------------------------------------------
+        # Params:
+            - None.
+        ------------
+        # Returns:
+            - bpd.DataFrame: One row per ICUSTAY_ID, columns of the form <vital>_<stat>.
         """
+        # Retrieve the DataFrame of matched items (ITEMID, LABEL, VITAL_NAME)
+        matched_vitals = self.matched_vitals_df
 
-        items_df = self.matched_items
-        item_lookup = items_df[["ITEMID", "VITAL_NAME"]].drop_duplicates()
-        item_lookup_str = ",\n".join(
+        # Deduplicate so each (ITEMID, VITAL_NAME) pair is unique
+        item_map_df = matched_vitals[["ITEMID", "VITAL_NAME"]].drop_duplicates()
+
+        # Convert item_map_df to a string of (ITEMID, VITAL_NAME) tuples for inline usage
+        item_map_struct_str = ",\n".join(
             f"({row.ITEMID}, '{row.VITAL_NAME}')"
-            for row in item_lookup.itertuples(index=False)
+            for row in item_map_df.itertuples(index=False)
         )
 
-        # Build pivot columns
+        # We want to compute these stats for each vital sign
         stats = ["mean", "min", "max", "std", "count"]
-        select_exprs = []
+        agg_expressions = []
+
+        # For each stat, build the appropriate SQL expression (AVG, MIN, MAX, STDDEV, COUNT)
         for stat in stats:
-            agg_func = (
-                "AVG" if stat == "mean" else "STDDEV" if stat == "std" else stat.upper()
+            if stat == "mean":
+                agg_func = "AVG"
+            elif stat == "std":
+                agg_func = "STDDEV"
+            else:
+                agg_func = stat.upper()
+
+            # For each distinct vital name, create a CASE expression that picks rows for that vital
+            for vital_name in item_map_df["VITAL_NAME"].unique():
+                expr = (
+                    f"{agg_func}(CASE WHEN VITAL_NAME = '{vital_name}' "
+                    f"THEN VALUENUM ELSE NULL END) AS `{vital_name}_{stat}`"
+                )
+                agg_expressions.append(expr)
+
+        # Join the expressions with commas and line breaks for readability in SQL
+        pivot_cols = ",\n    ".join(agg_expressions)
+
+        # Define the Query
+        query = (
+            f"""
+            WITH item_map AS (
+                SELECT ITEMID, VITAL_NAME
+                FROM UNNEST([
+                    STRUCT<ITEMID INT64, VITAL_NAME STRING>
+                    {item_map_struct_str}
+                ])
+            ),
+            ce_filtered AS (
+                SELECT 
+                    ce.ICUSTAY_ID,
+                    ce.VALUENUM,
+                    im.VITAL_NAME,
+                    TIMESTAMP_DIFF(ce.CHARTTIME, ic.INTIME, SECOND) / 3600.0 AS HOURS_FROM_INTIME
+                FROM `{self.dataset}.CHARTEVENTS` ce
+                JOIN item_map im ON ce.ITEMID = im.ITEMID
+                JOIN `{self.dataset}.ICUSTAYS` ic ON ce.ICUSTAY_ID = ic.ICUSTAY_ID
+                WHERE ce.VALUENUM IS NOT NULL
+            ),
+            ce_first24h AS (
+                -- Restrict to the first 24 hours of the ICU stay
+                SELECT *
+                FROM ce_filtered
+                WHERE HOURS_FROM_INTIME <= 24
             )
-            for vital in item_lookup["VITAL_NAME"].unique():
-                expr = f"""{agg_func}(CASE WHEN VITAL_NAME = '{vital}' THEN VALUENUM ELSE NULL END) AS `{vital}_{stat}`"""
-                select_exprs.append(expr)
-
-        pivot_sql = ",\n    ".join(select_exprs)
-
-        query = f"""
-        WITH item_map AS (
-            SELECT ITEMID, VITAL_NAME
-            FROM UNNEST([
-                STRUCT<ITEMID INT64, VITAL_NAME STRING>
-                {item_lookup_str}
-            ])
-        ),
-        ce_filtered AS (
-            SELECT 
-                ce.ICUSTAY_ID,
-                ce.VALUENUM,
-                im.VITAL_NAME,
-                TIMESTAMP_DIFF(ce.CHARTTIME, ic.INTIME, SECOND) / 3600.0 AS HOURS_FROM_INTIME
-            FROM `{self.dataset}.CHARTEVENTS` ce
-            JOIN item_map im ON ce.ITEMID = im.ITEMID
-            JOIN `{self.dataset}.ICUSTAYS` ic ON ce.ICUSTAY_ID = ic.ICUSTAY_ID
-            WHERE ce.VALUENUM IS NOT NULL
-        ),
-        ce_24hr AS (
-            SELECT *
-            FROM ce_filtered
-            WHERE HOURS_FROM_INTIME <= 24
+            SELECT
+                ICUSTAY_ID,
+                {pivot_cols}
+            FROM ce_first24h
+            GROUP BY ICUSTAY_ID
+            """
         )
-        SELECT
-            ICUSTAY_ID,
-            {pivot_sql}
-        FROM ce_24hr
-        GROUP BY ICUSTAY_ID
-        """
 
+        # The final pivoted DataFrame, one row per ICUSTAY_ID, columns for each vital+stat
         return bpd.read_gbq(query)
 
-    def extract_vent_flag(self) -> bpd.DataFrame:
+    def extract_ventilation_flag(self) -> bpd.DataFrame:
         """
-        Returns a BigFrames DataFrame with one row per ICU stay and a binary on_vent flag
-        indicating presence of a ventilation-related event in the first 24 hours.
+        # Description:
+            -> Identifies ICU stays with a 'ventilator' event in the first 24 hours.
+               Yields a binary on_vent=1 or 0 for each ICU stay.
+        ----------------------------------------------------------------------------------
+        # Params:
+            - None.
+        ------------
+        # Returns:
+            - bpd.DataFrame: [ICUSTAY_ID, on_vent].
+              on_vent=1 if a ventilator-related item is found, else 0.
         """
-        query = f"""
-        WITH vent_items AS (
-            SELECT ITEMID
-            FROM `{self.dataset}.D_ITEMS`
-            WHERE LOWER(LABEL) LIKE '%ventilator%'
-        ),
-        ce_24hr AS (
+        # Define the Query
+        query = (
+            f"""
+            WITH vent_items AS (
+                -- Grab all items from D_ITEMS whose label mentions 'ventilator'
+                SELECT ITEMID
+                FROM `{self.dataset}.D_ITEMS`
+                WHERE LOWER(LABEL) LIKE '%ventilator%'
+            ),
+            ce_first24h_vent AS (
+                SELECT 
+                    ce.ICUSTAY_ID,
+                    TIMESTAMP_DIFF(ce.CHARTTIME, ic.INTIME, SECOND)/3600.0 AS HOURS_FROM_INTIME
+                FROM `{self.dataset}.CHARTEVENTS` ce
+                JOIN `{self.dataset}.ICUSTAYS` ic USING(ICUSTAY_ID)
+                JOIN vent_items vi ON ce.ITEMID = vi.ITEMID
+                WHERE ce.VALUENUM IS NOT NULL
+            ),
+            flagged AS (
+                -- If an ICU stay has at least one row in the first 24 hours, mark on_vent=1
+                SELECT ICUSTAY_ID, 1 AS on_vent
+                FROM ce_first24h_vent
+                WHERE HOURS_FROM_INTIME <= 24
+                GROUP BY ICUSTAY_ID
+            )
             SELECT 
-                ce.ICUSTAY_ID,
-                TIMESTAMP_DIFF(ce.CHARTTIME, ic.INTIME, SECOND)/3600.0 AS HOURS_FROM_INTIME
-            FROM `{self.dataset}.CHARTEVENTS` ce
-            JOIN `{self.dataset}.ICUSTAYS` ic USING(ICUSTAY_ID)
-            JOIN vent_items vi ON ce.ITEMID = vi.ITEMID
-            WHERE ce.VALUENUM IS NOT NULL
-        ),
-        flagged AS (
-            SELECT ICUSTAY_ID, 1 AS on_vent
-            FROM ce_24hr
-            WHERE HOURS_FROM_INTIME <= 24
-            GROUP BY ICUSTAY_ID
+                ic.ICUSTAY_ID,
+                IFNULL(f.on_vent, 0) AS on_vent
+            FROM `{self.dataset}.ICUSTAYS` ic
+            LEFT JOIN flagged f USING(ICUSTAY_ID)
+            """
         )
-        SELECT 
-            ic.ICUSTAY_ID,
-            IFNULL(f.on_vent, 0) AS on_vent
-        FROM `{self.dataset}.ICUSTAYS` ic
-        LEFT JOIN flagged f USING(ICUSTAY_ID)
-        """
 
+        # Return a DataFrame with two columns: ICUSTAY_ID, on_vent (0 or 1)
         return bpd.read_gbq(query)
