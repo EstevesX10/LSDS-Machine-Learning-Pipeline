@@ -1,4 +1,4 @@
 # Defining which submodules to import when using from <package> import *
-__all__ = ["loadConfig", "loadPathsConfig"]
+__all__ = ["loadConfig", "loadPathsConfig", "loadQueries"]
 
-from .Config import (loadConfig, loadPathsConfig)
+from .Config import (loadConfig, loadPathsConfig, loadQueries)
