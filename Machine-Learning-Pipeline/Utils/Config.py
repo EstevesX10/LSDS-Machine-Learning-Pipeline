@@ -106,6 +106,72 @@ def loadMostCommonIllnessesQuery() -> str:
         """
     )
 
+def loadLeastFrequentCoOccuringDiagnosisQuery() -> str:
+    """
+    # Description
+        -> This function load the query used to analyse the
+        least frequent Co-Occuring Diagnosis on the dataset.
+    --------------------------------------------------------
+    # Params:
+        - None.
+    
+    # Returns:
+        - The query developed.
+    """
+
+    # Return the query
+    return (
+        """
+        SELECT 
+            diagA.SHORT_TITLE AS ILLNESS_A,
+            diagB.SHORT_TITLE AS ILLNESS_B,
+            COUNT(*) AS TOTAL_CO_OCCURENCIES
+        FROM `MIMIC.DIAGNOSES_ICD` AS a
+        JOIN `MIMIC.DIAGNOSES_ICD` AS b
+            ON a.HADM_ID = b.HADM_ID
+            AND a.ICD9_CODE < b.ICD9_CODE
+        JOIN `MIMIC.D_ICD_DIAGNOSES` AS diagA
+            ON a.ICD9_CODE = diagA.ICD9_CODE
+        JOIN `MIMIC.D_ICD_DIAGNOSES` AS diagB
+            ON b.ICD9_CODE = diagB.ICD9_CODE
+        GROUP BY diagA.SHORT_TITLE, diagB.SHORT_TITLE
+        ORDER BY TOTAL_CO_OCCURENCIES ASC;
+        """
+    )
+
+def loadMostFrequentCoOccuringDiagnosisQuery() -> str:
+    """
+    # Description
+        -> This function load the query used to analyse the
+        most frequent Co-Occuring Diagnosis on the dataset.
+    -------------------------------------------------------
+    # Params:
+        - None.
+    
+    # Returns:
+        - The query developed.
+    """
+
+    # Return the query
+    return (
+        """
+        SELECT 
+            diagA.SHORT_TITLE AS ILLNESS_A,
+            diagB.SHORT_TITLE AS ILLNESS_B,
+            COUNT(*) AS TOTAL_CO_OCCURENCIES
+        FROM `MIMIC.DIAGNOSES_ICD` AS a
+        JOIN `MIMIC.DIAGNOSES_ICD` AS b
+            ON a.HADM_ID = b.HADM_ID
+            AND a.ICD9_CODE < b.ICD9_CODE
+        JOIN `MIMIC.D_ICD_DIAGNOSES` AS diagA
+            ON a.ICD9_CODE = diagA.ICD9_CODE
+        JOIN `MIMIC.D_ICD_DIAGNOSES` AS diagB
+            ON b.ICD9_CODE = diagB.ICD9_CODE
+        GROUP BY diagA.SHORT_TITLE, diagB.SHORT_TITLE
+        ORDER BY TOTAL_CO_OCCURENCIES DESC;
+        """
+    )
+
 def loadHighLengthOfStayIllnessesQuery() -> str:
     """
     # Description
@@ -188,6 +254,8 @@ def loadIllnessesAnalysisQueries() -> dict:
     # Return the dictionary
     return {
         'Most-Common-Illnesses':loadMostCommonIllnessesQuery(),
+        'Least-Frequent-Co-Occuring-Diagnoses':loadLeastFrequentCoOccuringDiagnosisQuery(),
+        'Most-Frequent-Co-Occuring-Diagnoses':loadMostFrequentCoOccuringDiagnosisQuery(),
         'High-Length-Of-Stay-Illnesses':loadHighLengthOfStayIllnessesQuery(),
         'Deadliest-Illnesses':loadDeadliestIllnessesQuery()
     }
@@ -473,6 +541,150 @@ def loadMortalityRatesQueries() -> dict:
     }
 
 """
+# ------------------------------- #
+| Length of Stay Analysis Queries |
+# ------------------------------- #
+"""
+
+def loadDemographicCorrelationsLOSQuery() -> str:
+    """
+    # Description
+        -> This function loads the query responsible for computing
+        the demographic correlations regarding the patient's LOS.
+    --------------------------------------------------------------
+    # Params:
+        - None.
+    
+    # Returns:
+        - A string with the query used to develop the analysis.
+    """
+    # Return the Query used
+    return (
+        """
+        WITH patient_admissions AS (
+            SELECT 
+                p.SUBJECT_ID,
+                p.GENDER,
+                p.DOB,
+                a.ETHNICITY,
+                -- Apply the relabeling for ethnicity:
+                CASE 
+                WHEN UPPER(a.ETHNICITY) LIKE '%WHITE%' 
+                    AND UPPER(a.ETHNICITY) NOT LIKE '%HISPANIC%' 
+                    THEN 'White/European'
+                WHEN UPPER(a.ETHNICITY) LIKE '%BLACK%' 
+                    THEN 'Black/African American'
+                WHEN UPPER(a.ETHNICITY) LIKE '%ASIAN%' 
+                    THEN 'Asian'
+                WHEN UPPER(a.ETHNICITY) LIKE '%HISPANIC%' 
+                    OR UPPER(a.ETHNICITY) LIKE '%LATINO%' 
+                    THEN 'Hispanic/Latino'
+                WHEN UPPER(a.ETHNICITY) LIKE '%AMERICAN INDIAN%' 
+                    OR UPPER(a.ETHNICITY) LIKE '%ALASKA NATIVE%' 
+                    THEN 'Native American'
+                WHEN UPPER(a.ETHNICITY) LIKE '%NATIVE HAWAIIAN%' 
+                    OR UPPER(a.ETHNICITY) LIKE '%PACIFIC ISLANDER%' 
+                    THEN 'Pacific Islander'
+                WHEN UPPER(a.ETHNICITY) LIKE '%UNKNOWN%'
+                    OR UPPER(a.ETHNICITY) LIKE '%UNABLE%'
+                    OR UPPER(a.ETHNICITY) LIKE '%DECLINED%'
+                    THEN 'Unknown/Not Provided'
+                ELSE 'Other'
+                END AS ETHNICITY_GROUP,
+                a.ADMITTIME,
+                a.DISCHTIME,
+                TIMESTAMP_DIFF(a.DISCHTIME, a.ADMITTIME, DAY) AS LOS,
+                DATE_DIFF(DATE(a.ADMITTIME), DATE(p.DOB), YEAR) AS AGE_AT_ADMISSION
+            FROM `MIMIC.PATIENTS` p
+            JOIN `MIMIC.ADMISSIONS` a
+                ON p.SUBJECT_ID = a.SUBJECT_ID
+            WHERE p.DOB IS NOT NULL
+                AND a.ADMITTIME IS NOT NULL 
+                AND a.DISCHTIME IS NOT NULL
+        )
+        SELECT 
+            GENDER,
+            ETHNICITY_GROUP,
+            CASE 
+                WHEN AGE_AT_ADMISSION < 30 THEN '<30'
+                WHEN AGE_AT_ADMISSION BETWEEN 30 AND 50 THEN '30-50'
+                WHEN AGE_AT_ADMISSION BETWEEN 51 AND 70 THEN '51-70'
+                ELSE '>70'
+            END AS AGE_GROUP,
+            AVG(LOS) AS AVG_LOS,
+            COUNT(*) AS ADMISSION_COUNT
+        FROM patient_admissions
+        GROUP BY GENDER, ETHNICITY_GROUP, AGE_GROUP
+        ORDER BY AVG_LOS DESC;
+        """
+    )
+
+def loadOutlierAnalysisLOSQuery() -> str:
+    """
+    # Description
+        -> This function loads the query responsible for aiding the
+        outlier analysis of the the patients length of stay (LOS).
+    --------------------------------------------------------------
+    # Params:
+        - None.
+    
+    # Returns:
+        - A string with the query used to develop the analysis.
+    """
+    # Return the Query Used
+    return (
+        """
+        WITH LOS_DATA AS (
+            SELECT 
+                TIMESTAMP_DIFF(DISCHTIME, ADMITTIME, DAY) AS LOS
+            FROM `MIMIC.ADMISSIONS`
+            WHERE ADMITTIME IS NOT NULL AND DISCHTIME IS NOT NULL
+        ),
+        quartiles AS (
+            SELECT
+                APPROX_QUANTILES(LOS, 4)[OFFSET(1)] AS q1,
+                APPROX_QUANTILES(LOS, 4)[OFFSET(3)] AS q3
+            FROM LOS_DATA
+        ),
+        outlier_bounds AS (
+            SELECT
+                q1,
+                q3,
+                (q3 - q1) AS iqr,
+                q1 - 1.5 * (q3 - q1) AS lowerBound,
+                q3 + 1.5 * (q3 - q1) AS upperBound
+            FROM quartiles
+        )
+        SELECT 
+            LOS,
+            CASE 
+                WHEN LOS < lowerBound THEN 'Low Outlier'
+                WHEN LOS > upperBound THEN 'High Outlier'
+                ELSE 'Normal'
+            END AS OUTLIER_FLAG
+        FROM LOS_DATA, outlier_bounds;
+        """
+    )
+
+def loadLengthOfStayAnalysisQueries() -> dict:
+    """
+    # Description
+        -> This function loads the queries responsible to help us
+        analyse the length of stay of the patients in the dataset.
+    --------------------------------------------------------------
+    # Params:
+        - None.
+    
+    # Returns:
+        - A structured dictionary with the developed queries.
+    """
+
+    return {
+        'Demographic-Correlations':loadDemographicCorrelationsLOSQuery(),
+        'Outlier-Analysis':loadOutlierAnalysisLOSQuery()
+    }
+
+"""
 # -------------------------------------- #
 | Exploratory Data Analysis Query Loader |
 # -------------------------------------- #
@@ -493,7 +705,8 @@ def loadExploratoryDataAnalysisQueries() -> dict:
 
     return {
         'Illnesses-Analysis':loadIllnessesAnalysisQueries(),
-        'Mortality-Rates':loadMortalityRatesQueries()
+        'Mortality-Rates':loadMortalityRatesQueries(),
+        'Length-Of-Stay-Analysis':loadLengthOfStayAnalysisQueries()
     }
 
 """

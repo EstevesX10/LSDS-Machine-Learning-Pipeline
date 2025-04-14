@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.patches import Patch
 import seaborn as sns
 
 class DatasetAnalyser:
@@ -471,7 +472,7 @@ class DatasetAnalyser:
         
         n = len(values)
         
-        # 4. Generate colors from the 'RdYlGn' colormap and pastelize them.
+        # Generate colors from the 'RdYlGn' colormap and pastelize them.
         cmap = plt.get_cmap("RdYlGn")
         if n > 1:
             colors = [self.pastelizeColor(cmap(i / (n - 1)), weight=weight) for i in range(n)]
@@ -487,7 +488,7 @@ class DatasetAnalyser:
             else:
                 return f"{val:.3f}"
         
-        # 5. Create a custom autopct function that puts the bold label and numeric sum in each wedge.
+        # Create a custom autopct function that puts the bold label and numeric sum in each wedge.
         def makeAutopct(labelsList, sumsList):
             def myAutopct(_pct):
                 idx = myAutopct.index
@@ -504,7 +505,7 @@ class DatasetAnalyser:
             myAutopct.index = 0
             return myAutopct
         
-        # 6. Plot the pie chart, adjusting pctdistance so text sits closer to the center.
+        # Plot the pie chart, adjusting pctdistance so text sits closer to the center.
         fig, ax = plt.subplots(figsize=(6, 6))
         wedges, _, autotexts = ax.pie(
             values,
@@ -518,7 +519,7 @@ class DatasetAnalyser:
             wedgeprops=dict(edgecolor="white", linewidth=1.5)
         )
         
-        # 7. Add a pastel background behind each label, with reduced padding.
+        # Add a pastel background behind each label, with reduced padding.
         for wedge, autotext in zip(wedges, autotexts):
             wedgeColor = wedge.get_facecolor()  # RGBA tuple.
             labelBackgroundColor = self.pastelizeColor(wedgeColor, weight=0.2)
@@ -537,5 +538,123 @@ class DatasetAnalyser:
             fontweight='bold',
         )
         
+        plt.tight_layout()
+        plt.show()
+
+    def plotBoxPlot(self, x:str, y:str, hue:str, makeSmallPlot:bool=False) -> None:
+        """
+        # Description
+            -> Creates a box plot using the specified features for the x-axis,
+            y-axis, and a grouping variable (hue). Uses a custom pastel palette
+            generated from the "RdYlGn" colormap for the hue groups.
+        -----------------------------------------------------------------------
+        # Parameters:
+        - x: str -> The feature to use for the X axis.
+        - y: str -> The feature to use for the Y axis.
+        - hue: str -> The feature to use for grouping the data.
+        - makeSmallPlot: bool -> Determines whether or not to use a bigger figure for the plot.
+        
+        # Returns:
+            - None. Displays the plots.
+        """
+
+        # Making sure the given features are within the dataframe
+        if x not in self.df.columns:
+            raise ValueError(f"Invalid {x} feature given! Please make sure to use one of the following {list(self.df.columns)}")
+        if y not in self.df.columns:
+            raise ValueError(f"Invalid {y} feature given! Please make sure to use one of the following {list(self.df.columns)}")
+        if hue not in self.df.columns:
+            raise ValueError(f"Invalid {hue} feature given! Please make sure to use one of the following {list(self.df.columns)}")
+
+        # Set a value for the figsize
+        if makeSmallPlot:
+            figuresize = (6, 5)
+        else:
+            figuresize = (10, 6)
+        
+        # Set the seaborn style.
+        sns.set(style="whitegrid")
+        plt.figure(figsize=figuresize)
+        
+        # Generate a custom pastel palette for the hue groups.
+        # Get the unique hue values (drop nans and sort for consistent ordering).
+        unique_vals = sorted(self.df[hue].dropna().unique())
+        n = len(unique_vals)
+        cmap = plt.get_cmap("RdYlGn")
+        palette = {}
+        for i, val in enumerate(unique_vals):
+            # Use the colormap to generate a base color.
+            base_color = cmap(i / (n - 1)) if n > 1 else cmap(0.5)
+            # Pastelize the base color.
+            pastel_color = self.pastelizeColor(base_color, weight=0.5)
+            palette[val] = pastel_color
+        
+        # Create the box plot using the custom palette.
+        ax = sns.boxplot(x=x, y=y, hue=hue, data=self.df, palette=palette)
+        
+        # Set title, labels, and legend.
+        if y == 'AVG_LOS':
+            plt.ylabel("Average Length of Stay (Days)", fontsize=12)
+            plt.title(f"Average Length of Stay by {x} and {hue}", fontsize=14, fontweight='bold', pad=20)
+        else:
+            plt.ylabel(y, fontsize=12)
+            plt.title(f"{y} by {x} and {hue}", fontsize=14, fontweight='bold', pad=20)
+
+        plt.xlabel(x, fontsize=12)
+        plt.legend(title=hue, fontsize=10, title_fontsize=12)
+        plt.grid(True, linestyle='--', alpha=0.5, zorder=2)
+        plt.tight_layout()
+        plt.show()
+
+    def plotTargetOutliers(self)-> None:
+        """
+        # Description
+            -> This method was developed exclusively to
+        analyse the outliers within the LOS target class.
+        -------------------------------------------------
+        # Params:
+            - None.
+        
+        # Returns:
+            - None, beacause we are only plotting data.
+        """
+
+        # Check if there is a LOS column in the loaded dataframe
+        if 'LOS' not in self.df.columns:
+            raise ValueError("Not possible to plot the Target Feature outliers as there is no column in the loaded dataframe with the Column \'LOS\'!")
+
+        # Assuming 'self.df' contains a pre-computed LOS column in days
+        los = self.df['LOS']
+
+        # Compute quartiles and IQR
+        q1 = los.quantile(0.25)
+        q3 = los.quantile(0.75)
+        iqr = q3 - q1
+        lowerBound = q1 - 1.5 * iqr
+        upperBound = q3 + 1.5 * iqr
+
+        # Identify outliers
+        outliers = self.df[(self.df['LOS'] < lowerBound) | (self.df['LOS'] > upperBound)]
+        numberOutliers = len(outliers)
+
+        # Plot the boxplot using Seaborn with a pastel aesthetic.
+        sns.set(style="whitegrid")
+        plt.figure(figsize=(6, 5))
+        
+        # Define a initial color
+        initialColor = '#4a9b65'
+
+        # Use your pastel color function to get a light color for the box.
+        pastelColor = self.pastelizeColor(initialColor, weight=0.7)
+        ax = sns.boxplot(x=los, color=pastelColor, zorder=2)
+        plt.title("Boxplot of Length of Stay (LOS)", fontsize=14, fontweight='bold', pad=20)
+        plt.xlabel("LOS (Days)")
+        
+        # Add a custom legend item with the outlier count.
+        legend_patch = Patch(facecolor=pastelColor, edgecolor=initialColor, label=f'Outliers: {numberOutliers}')
+        ax.legend(handles=[legend_patch], loc='upper right', title='Total Outliers')
+
+        # Draw grid lines behind the boxplot
+        plt.grid(True, linestyle='--', alpha=0.7, zorder=1)
         plt.tight_layout()
         plt.show()
