@@ -1,5 +1,6 @@
 from functools import (cached_property)
 import bigframes.pandas as bpd
+import numpy as np
 import pandas as pd
 
 class BigQueryLoader:
@@ -88,7 +89,7 @@ class BigQueryLoader:
         patients = bpd.read_gbq(f"{self.dataset}.PATIENTS")
 
         # Merge all three tables to get a combined DataFrame with relevant columns
-        demographics_df = (
+        df = (
             icu_stays
             .merge(admissions, on=["HADM_ID", "SUBJECT_ID"])
             .merge(patients, on="SUBJECT_ID")
@@ -115,6 +116,37 @@ class BigQueryLoader:
                 ]
             ]
         )
+
+        # Define the conditions to perform ethnicity relabelling
+        eth = df["ETHNICITY"].str.upper()
+        conds = [
+            eth.str.contains("WHITE") & ~eth.str.contains("HISPANIC"),
+            eth.str.contains("BLACK"),
+            eth.str.contains("ASIAN"),
+            eth.str.contains("HISPANIC") | eth.str.contains("LATINO"),
+            eth.str.contains("AMERICAN INDIAN") | eth.str.contains("ALASKA NATIVE"),
+            eth.str.contains("NATIVE HAWAIIAN") | eth.str.contains("PACIFIC ISLANDER"),
+            eth.str.contains("UNKNOWN") | eth.str.contains("UNABLE") | eth.str.contains("DECLINED"),
+        ]
+        choices = [
+            "White/European",
+            "Black/African American",
+            "Asian",
+            "Hispanic/Latino",
+            "Native American",
+            "Pacific Islander",
+            "Unknown/Not Provided",
+        ]
+
+        # Apply the ethnicity relabeling
+        df["ETHNICITY_GROUP"] = np.select(conds, choices, default="Other")
+
+        # Select the important columns
+        demographics_df = df[[
+            "ICUSTAY_ID", "HADM_ID", "SUBJECT_ID",
+            "GENDER", "ETHNICITY_GROUP",
+            "AGE", "LOS", "LOS_HOURS"
+        ]]
 
         return demographics_df
 
