@@ -97,8 +97,6 @@ class BigQueryLoader:
             .assign(
                 # Approximate age = year of INTIME minus year of DOB
                 AGE=lambda df: df.INTIME.dt.year - df.DOB.dt.year,
-                # Convert LOS from days to hours
-                LOS_HOURS=lambda df: df.LOS * 24,
             )
             # Filter out rows where AGE is 120 or more (likely data artifact)
             .query("AGE < 120")
@@ -111,8 +109,7 @@ class BigQueryLoader:
                     "GENDER",
                     "ETHNICITY",
                     "AGE",
-                    "LOS",
-                    "LOS_HOURS",
+                    "LOS"
                 ]
             ]
         )
@@ -145,7 +142,7 @@ class BigQueryLoader:
         demographics_df = df[[
             "ICUSTAY_ID", "HADM_ID", "SUBJECT_ID",
             "GENDER", "ETHNICITY_GROUP",
-            "AGE", "LOS", "LOS_HOURS"
+            "AGE", "LOS"
         ]]
 
         return demographics_df
