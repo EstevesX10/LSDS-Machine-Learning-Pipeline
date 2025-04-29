@@ -149,53 +149,46 @@ class BigQueryLoader:
 
     def load_demoV2(self) -> bpd.DataFrame:
         """ 
-        Loads ICUSTAYS, ADMISSIONS and PATIENTS from BigQuery,
-        merges them, computes AGE, filters unrealistic ages,
-        and assigns ETHNICITY_GROUP in a minimal number of passes.
+        Computes the results through a query in the cloud
         """
-        # Read & merge
-        icu        = bpd.read_gbq(f"{self.dataset}.ICUSTAYS")
-        admissions = bpd.read_gbq(f"{self.dataset}.ADMISSIONS")
-        patients   = bpd.read_gbq(f"{self.dataset}.PATIENTS")
-
-        df = (
-            icu
-            .merge(admissions, on=["HADM_ID", "SUBJECT_ID"])
-            .merge(patients,   on="SUBJECT_ID")
-            .assign(
-                AGE=lambda d: d.INTIME.dt.year - d.DOB.dt.year
-            )
-            .query("AGE < 120")
+        # Define the query to extract the demographic data
+        query = f"""
+        WITH demo AS (
+            SELECT
+                icu.ICUSTAY_ID,
+                adm.HADM_ID,
+                icu.SUBJECT_ID,
+                pat.GENDER,
+                -- compute age in SQL
+                EXTRACT(YEAR FROM icu.INTIME) - EXTRACT(YEAR FROM pat.DOB) AS AGE,
+                icu.LOS,
+                CASE
+                    WHEN UPPER(adm.ETHNICITY) LIKE '%WHITE%'
+                        AND UPPER(adm.ETHNICITY) NOT LIKE '%HISPANIC%' THEN 'White/European'
+                    WHEN UPPER(adm.ETHNICITY) LIKE '%BLACK%' THEN 'Black/African American'
+                    WHEN UPPER(adm.ETHNICITY) LIKE '%ASIAN%' THEN 'Asian'
+                    WHEN UPPER(adm.ETHNICITY) LIKE '%HISPANIC%' 
+                        OR UPPER(adm.ETHNICITY) LIKE '%LATINO%' THEN 'Hispanic/Latino'
+                    WHEN UPPER(adm.ETHNICITY) LIKE '%AMERICAN INDIAN%'
+                        OR UPPER(adm.ETHNICITY) LIKE '%ALASKA NATIVE%' THEN 'Native American'
+                    WHEN UPPER(adm.ETHNICITY) LIKE '%NATIVE HAWAIIAN%'
+                        OR UPPER(adm.ETHNICITY) LIKE '%PACIFIC ISLANDER%' THEN 'Pacific Islander'
+                    WHEN UPPER(adm.ETHNICITY) LIKE '%UNKNOWN%'
+                        OR UPPER(adm.ETHNICITY) LIKE '%UNABLE%'
+                        OR UPPER(adm.ETHNICITY) LIKE '%DECLINED%' THEN 'Unknown/Not Provided'
+                ELSE 'Other'
+                END AS ETHNICITY,
+            FROM `{self.dataset}.ICUSTAYS` AS icu
+            JOIN `{self.dataset}.ADMISSIONS` AS adm
+                USING(HADM_ID, SUBJECT_ID)
+            JOIN `{self.dataset}.PATIENTS` AS pat
+                USING(SUBJECT_ID)
+            WHERE EXTRACT(YEAR FROM icu.INTIME) - EXTRACT(YEAR FROM pat.DOB) < 120
         )
-
-        # Uppercase once, filling nulls so .contains() has no na kwarg
-        eth = df["ETHNICITY"].fillna("").str.upper()
-
-        # Build all masks in one pass of regex alternations
-        white_mask   = eth.str.contains("WHITE") & ~eth.str.contains("HISPANIC|LATINO")
-        black_mask   = eth.str.contains("BLACK")
-        asian_mask   = eth.str.contains("ASIAN")
-        hisp_mask    = eth.str.contains("HISPANIC|LATINO")
-        native_mask  = eth.str.contains("AMERICAN INDIAN|ALASKA NATIVE")
-        pacific_mask = eth.str.contains("NATIVE HAWAIIAN|PACIFIC ISLANDER")
-        unknown_mask = eth.str.contains("UNKNOWN|UNABLE|DECLINED")
-
-        # One assignment per group (only 7 total)
-        df["ETHNICITY_GROUP"] = "Other"
-        df.loc[white_mask,   "ETHNICITY_GROUP"] = "White/European"
-        df.loc[black_mask,   "ETHNICITY_GROUP"] = "Black/African American"
-        df.loc[asian_mask,   "ETHNICITY_GROUP"] = "Asian"
-        df.loc[hisp_mask,    "ETHNICITY_GROUP"] = "Hispanic/Latino"
-        df.loc[native_mask,  "ETHNICITY_GROUP"] = "Native American"
-        df.loc[pacific_mask, "ETHNICITY_GROUP"] = "Pacific Islander"
-        df.loc[unknown_mask, "ETHNICITY_GROUP"] = "Unknown/Not Provided"
-
-        # Final select
-        return df[[
-            "ICUSTAY_ID", "HADM_ID", "SUBJECT_ID",
-            "GENDER", "ETHNICITY_GROUP",
-            "AGE", "LOS"
-        ]]
+            SELECT * FROM demo;
+        """
+        # Return the results within a BigFrames DataFrame
+        return bpd.read_gbq_query(query)
 
 
     @property
