@@ -188,23 +188,30 @@ def loadHighLengthOfStayIllnessesQuery() -> str:
     # Return the Query
     return (
         """
-        WITH ILLNESS_LOS AS (
-            SELECT 
-                diagnoses.ICD9_CODE,
-                AVG(icuStays.LOS) AS AVG_LOS
-            FROM `MIMIC.DIAGNOSES_ICD` AS diagnoses
-            JOIN `MIMIC.ICUSTAYS` AS icuStays
-                ON diagnoses.SUBJECT_ID = icuStays.SUBJECT_ID 
-                AND diagnoses.HADM_ID = icuStays.HADM_ID
-            GROUP BY diagnoses.ICD9_CODE
+        WITH illness_stats AS (
+            SELECT
+                d.icd9_code,
+                COUNT(*)                   AS TOTAL_CASES,
+                AVG(s.los)                 AS AVG_LOS,
+                APPROX_QUANTILES(s.los, 100)[OFFSET(50)] 
+                                            AS median_los
+            FROM `MIMIC.DIAGNOSES_ICD`   AS d
+            JOIN `MIMIC.ICUSTAYS`        AS s
+                ON d.subject_id = s.subject_id
+            AND d.hadm_id    = s.hadm_id
+            GROUP BY d.icd9_code
+            HAVING COUNT(*) >= 50         
         )
         SELECT
-            descriptionDiagnoses.SHORT_TITLE AS ILLNESS,
-            illnesses.AVG_LOS
-        FROM ILLNESS_LOS AS illnesses
-            JOIN `MIMIC.D_ICD_DIAGNOSES` AS descriptionDiagnoses
-            ON illnesses.ICD9_CODE = descriptionDiagnoses.ICD9_CODE
-        ORDER BY illnesses.AVG_LOS DESC;
+            diag.short_title   AS illness,
+            stats.TOTAL_CASES,
+            ROUND(stats.AVG_LOS, 2)      AS AVG_LOS_DAYS,
+            ROUND(stats.median_los, 2)   AS MEDIAN_LOS_DAYS
+        FROM illness_stats AS stats
+            JOIN `MIMIC.D_ICD_DIAGNOSES`   AS diag
+                ON stats.icd9_code = diag.icd9_code
+        ORDER BY stats.AVG_LOS DESC
+        LIMIT 20;
         """
     )
 
