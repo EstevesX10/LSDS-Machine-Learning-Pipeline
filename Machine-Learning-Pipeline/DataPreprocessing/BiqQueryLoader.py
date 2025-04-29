@@ -66,7 +66,7 @@ class BigQueryLoader:
         self._vital_patterns = new_patterns
         self._matched_vitals_df = None
 
-    def load_demo(self) -> bpd.DataFrame:
+    def load_demoV1(self) -> bpd.DataFrame:
         """
         # Description:
             -> Loads key tables (ICUSTAYS, ADMISSIONS, PATIENTS) from BigQuery,
@@ -146,6 +146,57 @@ class BigQueryLoader:
         ]]
 
         return demographics_df
+
+    def load_demoV2(self) -> bpd.DataFrame:
+        """ 
+        Loads ICUSTAYS, ADMISSIONS and PATIENTS from BigQuery,
+        merges them, computes AGE, filters unrealistic ages,
+        and assigns ETHNICITY_GROUP in a minimal number of passes.
+        """
+        # Read & merge
+        icu        = bpd.read_gbq(f"{self.dataset}.ICUSTAYS")
+        admissions = bpd.read_gbq(f"{self.dataset}.ADMISSIONS")
+        patients   = bpd.read_gbq(f"{self.dataset}.PATIENTS")
+
+        df = (
+            icu
+            .merge(admissions, on=["HADM_ID", "SUBJECT_ID"])
+            .merge(patients,   on="SUBJECT_ID")
+            .assign(
+                AGE=lambda d: d.INTIME.dt.year - d.DOB.dt.year
+            )
+            .query("AGE < 120")
+        )
+
+        # Uppercase once, filling nulls so .contains() has no na kwarg
+        eth = df["ETHNICITY"].fillna("").str.upper()
+
+        # Build all masks in one pass of regex alternations
+        white_mask   = eth.str.contains("WHITE") & ~eth.str.contains("HISPANIC|LATINO")
+        black_mask   = eth.str.contains("BLACK")
+        asian_mask   = eth.str.contains("ASIAN")
+        hisp_mask    = eth.str.contains("HISPANIC|LATINO")
+        native_mask  = eth.str.contains("AMERICAN INDIAN|ALASKA NATIVE")
+        pacific_mask = eth.str.contains("NATIVE HAWAIIAN|PACIFIC ISLANDER")
+        unknown_mask = eth.str.contains("UNKNOWN|UNABLE|DECLINED")
+
+        # One assignment per group (only 7 total)
+        df["ETHNICITY_GROUP"] = "Other"
+        df.loc[white_mask,   "ETHNICITY_GROUP"] = "White/European"
+        df.loc[black_mask,   "ETHNICITY_GROUP"] = "Black/African American"
+        df.loc[asian_mask,   "ETHNICITY_GROUP"] = "Asian"
+        df.loc[hisp_mask,    "ETHNICITY_GROUP"] = "Hispanic/Latino"
+        df.loc[native_mask,  "ETHNICITY_GROUP"] = "Native American"
+        df.loc[pacific_mask, "ETHNICITY_GROUP"] = "Pacific Islander"
+        df.loc[unknown_mask, "ETHNICITY_GROUP"] = "Unknown/Not Provided"
+
+        # Final select
+        return df[[
+            "ICUSTAY_ID", "HADM_ID", "SUBJECT_ID",
+            "GENDER", "ETHNICITY_GROUP",
+            "AGE", "LOS"
+        ]]
+
 
     @property
     def matched_vitals_df(self) -> pd.DataFrame:
