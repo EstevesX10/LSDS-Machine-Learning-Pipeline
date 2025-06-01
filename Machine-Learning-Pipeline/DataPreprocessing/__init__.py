@@ -1,6 +1,4 @@
 # Defining which submodules to import when using from <package> import *
-__all__ = ["timeit",
-           "BigQueryLoader"]
+__all__ = ["BigQueryLoader"]
 
-from .CustomDecorators import (timeit)
 from .BiqQueryLoader import (BigQueryLoader)
